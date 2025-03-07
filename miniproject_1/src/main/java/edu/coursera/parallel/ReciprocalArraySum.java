@@ -55,8 +55,7 @@ public final class ReciprocalArraySum {
      * @return The inclusive index that this chunk starts at in the set of
      * nElements
      */
-    private static int getChunkStartInclusive(final int chunk,
-                                              final int nChunks, final int nElements) {
+    private static int getChunkStartInclusive(final int chunk, final int nChunks, final int nElements) {
         final int chunkSize = getChunkSize(nChunks, nElements);
         return chunk * chunkSize;
     }
@@ -70,8 +69,7 @@ public final class ReciprocalArraySum {
      * @param nElements The number of elements to chunk across
      * @return The exclusive end index for this chunk
      */
-    private static int getChunkEndExclusive(final int chunk, final int nChunks,
-                                            final int nElements) {
+    private static int getChunkEndExclusive(final int chunk, final int nChunks, final int nElements) {
         final int chunkSize = getChunkSize(nChunks, nElements);
         final int end = (chunk + 1) * chunkSize;
         if (end > nElements) {
@@ -111,8 +109,7 @@ public final class ReciprocalArraySum {
          * @param setEndIndexExclusive   Set ending index for parallel traversal.
          * @param setInput               Input values
          */
-        ReciprocalArraySumTask(final int setStartIndexInclusive,
-                               final int setEndIndexExclusive, final double[] setInput) {
+        ReciprocalArraySumTask(final int setStartIndexInclusive, final int setEndIndexExclusive, final double[] setInput) {
             this.startIndexInclusive = setStartIndexInclusive;
             this.endIndexExclusive = setEndIndexExclusive;
             this.input = setInput;
@@ -150,6 +147,14 @@ public final class ReciprocalArraySum {
                 left.fork();
                 right.compute();
                 left.join();
+                /*
+                 invokeAll(left, right);
+
+                 * Notes : invokeAll(..tasks) also do the similar job of fork -> compute -> join,
+                 * But it waits for all given tasks to complete and no specific order on how they execute
+                 * Ideal for multiple independent tasks to go to pool.
+                 * If there is specific ordering on how tasks should be done, better to control it using fork and join
+                 */
                 value = left.getValue() + right.getValue();
             }
 
@@ -185,8 +190,7 @@ public final class ReciprocalArraySum {
      * @param numTasks The number of tasks to create
      * @return The sum of the reciprocals of the array input
      */
-    protected static double parManyTaskArraySum(final double[] input,
-                                                final int numTasks) {
+    protected static double parManyTaskArraySum(final double[] input, final int numTasks) {
 
         /* Initially used ForkJoinPool (with both setting up parallelism manually and using common pool)
          *  For the invokeAll we need to pass tasks that are `Callable` so, wrapping them up in lambda functions
@@ -194,16 +198,43 @@ public final class ReciprocalArraySum {
          * */
 
         List<ReciprocalArraySumTask> tasks = new ArrayList<>();
-        for(int i = 0; i < numTasks; i++) {
+        for (int i = 0; i < numTasks; i++) {
             tasks.add(new ReciprocalArraySumTask(getChunkStartInclusive(i, numTasks, input.length), getChunkEndExclusive(i, numTasks, input.length), input));
         }
 
-        ForkJoinTask.invokeAll(tasks);
+        // one more imp note - if executed outside of pool -> invokeAll executes tasks in seq only
+        // But surprisingly performs same as below which executes invokeAll in a pool
+        // Need to understand this more
+        //ForkJoinTask.invokeAll(tasks);
+
+//        ForkJoinPool.commonPool().invoke(new RecursiveAction() {
+//            @Override
+//            protected void compute() {
+//                invokeAll(tasks);
+//            }
+//        });
+
+
+//        double sum = 0;
+//        for (ReciprocalArraySumTask task : tasks) {
+//            sum += task.getValue();
+//        }
+//        return sum;
+
+        // Uses current pool to distribute forks among threads
+        for (ReciprocalArraySumTask task : tasks) {
+            task.fork();
+        }
+
+        for (ReciprocalArraySumTask task : tasks) {
+            task.join();
+        }
+
         double sum = 0;
-        for(ReciprocalArraySumTask task : tasks) {
+        for (ReciprocalArraySumTask task : tasks) {
             sum += task.getValue();
         }
-        return  sum;
-            
+        return sum;
+
     }
 }
